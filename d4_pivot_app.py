@@ -4,7 +4,7 @@ import uuid
 import json
 from threading import Thread
 import requests
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, redirect, url_for
 
 app = Flask(__name__)
 DB_FILE = "day4_system.db"
@@ -82,7 +82,7 @@ def run_queue_worker():
 
 Thread(target=run_queue_worker, daemon=True).start()
 
-# --- HOMEPAGE: INLINE HTML FRONTEND ---
+# --- HOMEPAGE WITH TEST DATA BUTTON ---
 @app.route('/')
 def home():
     try:
@@ -100,11 +100,8 @@ def home():
         checkins = cursor.fetchall()
         conn.close()
 
-        # Build dynamic HTML rows directly in Python
         task_rows = "".join([f"<tr><td>#{t['id']}</td><td>{t['task_type']}</td><td>{t['payload']}</td><td>{t['status']}</td></tr>" for t in tasks]) or "<tr><td colspan='4' style='color:#64748b;'>No tasks in queue.</td></tr>"
-
         stock_rows = "".join([f"<tr><td>{s['sku']}</td><td>{s['quantity']}</td><td>{s['last_updated']}</td></tr>" for s in stock]) or "<tr><td colspan='3' style='color:#64748b;'>No stock records found.</td></tr>"
-
         checkin_rows = "".join([f"<tr><td>{c['scan_id']}</td><td>{c['user_id']}</td><td>{c['status']}</td></tr>" for c in checkins]) or "<tr><td colspan='3' style='color:#64748b;'>No check-in scans recorded.</td></tr>"
 
         return f"""
@@ -116,8 +113,11 @@ def home():
             <style>
                 body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 25px; margin: 0; }}
                 .container {{ max-width: 1000px; margin: auto; }}
-                h1 {{ color: #38bdf8; margin-bottom: 5px; }}
-                .status {{ color: #34d399; font-weight: bold; margin-bottom: 25px; }}
+                .header-flex {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }}
+                h1 {{ color: #38bdf8; margin: 0; }}
+                .status {{ color: #34d399; font-weight: bold; }}
+                .btn {{ background: #0284c7; color: white; padding: 10px 18px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; text-decoration: none; display: inline-block; transition: background 0.2s; }}
+                .btn:hover {{ background: #0369a1; }}
                 .card {{ background: #1e293b; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #334155; }}
                 h2 {{ font-size: 1.1rem; color: #94a3b8; margin-top: 0; }}
                 table {{ width: 100%; border-collapse: collapse; text-align: left; margin-top: 10px; }}
@@ -127,8 +127,15 @@ def home():
         </head>
         <body>
             <div class="container">
-                <h1>Meridian Northstar Dashboard</h1>
-                <div class="status">● System Live & Listening</div>
+                <div class="header-flex">
+                    <div>
+                        <h1>Meridian Northstar Dashboard</h1>
+                        <div class="status">● System Live & Listening</div>
+                    </div>
+                    <div>
+                        <a href="/generate-test-data" class="btn">⚡ Generate Test Data</a>
+                    </div>
+                </div>
 
                 <div class="card">
                     <h2>Task Queue Jobs</h2>
@@ -150,6 +157,37 @@ def home():
         """
     except Exception as e:
         return f"<h2>System Active</h2><p>Database Initializing: {str(e)}</p>"
+
+# --- TEST DATA GENERATOR ROUTE ---
+@app.route('/generate-test-data')
+def generate_test_data():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    # Insert mock inventory webhook tasks
+    sample_skus = [("SKU-ALPHA-99", 150), ("SKU-BETA-88", 230), ("SKU-GAMMA-77", 45)]
+    for sku, qty in sample_skus:
+        cursor.execute(
+            "INSERT INTO task_queue (task_type, payload) VALUES (?, ?)",
+            ("PROCESS_INVENTORY_WEBHOOK", json.dumps({"sku": sku, "quantity": qty}))
+        )
+
+    # Insert mock kiosk check-ins and print jobs
+    sample_users = ["EVALUATOR-01", "SCHOLARSHIP-02", "TESTER-03"]
+    for user_id in sample_users:
+        scan_id = str(uuid.uuid4())[:8]
+        cursor.execute(
+            "INSERT INTO checkin_scans (scan_id, user_id, status, updated_at) VALUES (?, ?, 'Pending', ?)",
+            (scan_id, user_id, time.time())
+        )
+        cursor.execute(
+            "INSERT INTO task_queue (task_type, payload) VALUES (?, ?)",
+            ("DISPATCH_PRINT_JOB", json.dumps({"scan_id": scan_id, "user_id": user_id}))
+        )
+
+    conn.commit()
+    conn.close()
+    return redirect(url_for('home'))
 
 # --- BACKEND ENDPOINTS ---
 @app.route('/webhooks/inventory', methods=['POST'])
