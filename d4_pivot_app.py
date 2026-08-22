@@ -133,7 +133,7 @@ def home():
                         <div class="status">● System Live & Listening</div>
                     </div>
                     <div>
-                        <a href="/generate-test-data" class="btn">⚡ Generate Test Data</a>
+                        <a href="/generate-test-data" class="btn"> Generate Test Data</a>
                     </div>
                 </div>
 
