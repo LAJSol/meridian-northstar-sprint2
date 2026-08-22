@@ -4,7 +4,7 @@ import uuid
 import json
 from threading import Thread
 import requests
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 DB_FILE = "day4_system.db"
@@ -82,36 +82,82 @@ def run_queue_worker():
 
 Thread(target=run_queue_worker, daemon=True).start()
 
+# --- HOMEPAGE: INLINE HTML FRONTEND ---
 @app.route('/')
 def home():
     try:
         conn = sqlite3.connect(DB_FILE)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        
+
         cursor.execute("SELECT * FROM task_queue ORDER BY id DESC LIMIT 10")
-        tasks = [dict(row) for row in cursor.fetchall()]
+        tasks = cursor.fetchall()
 
         cursor.execute("SELECT * FROM local_stock ORDER BY last_updated DESC LIMIT 10")
-        stock = [dict(row) for row in cursor.fetchall()]
+        stock = cursor.fetchall()
 
         cursor.execute("SELECT * FROM checkin_scans ORDER BY updated_at DESC LIMIT 10")
-        checkins = [dict(row) for row in cursor.fetchall()]
-
+        checkins = cursor.fetchall()
         conn.close()
-        return render_template('index.html', tasks=tasks, stock=stock, checkins=checkins)
-    except Exception as e:
-        return f"<h2>System Status: Active</h2><p>Database table loading... ({str(e)})</p>"
 
+        # Build dynamic HTML rows directly in Python
+        task_rows = "".join([f"<tr><td>#{t['id']}</td><td>{t['task_type']}</td><td>{t['payload']}</td><td>{t['status']}</td></tr>" for t in tasks]) or "<tr><td colspan='4' style='color:#64748b;'>No tasks in queue.</td></tr>"
+
+        stock_rows = "".join([f"<tr><td>{s['sku']}</td><td>{s['quantity']}</td><td>{s['last_updated']}</td></tr>" for s in stock]) or "<tr><td colspan='3' style='color:#64748b;'>No stock records found.</td></tr>"
+
+        checkin_rows = "".join([f"<tr><td>{c['scan_id']}</td><td>{c['user_id']}</td><td>{c['status']}</td></tr>" for c in checkins]) or "<tr><td colspan='3' style='color:#64748b;'>No check-in scans recorded.</td></tr>"
+
+        return f"""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <title>Meridian Northstar Operations</title>
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 25px; margin: 0; }}
+                .container {{ max-width: 1000px; margin: auto; }}
+                h1 {{ color: #38bdf8; margin-bottom: 5px; }}
+                .status {{ color: #34d399; font-weight: bold; margin-bottom: 25px; }}
+                .card {{ background: #1e293b; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #334155; }}
+                h2 {{ font-size: 1.1rem; color: #94a3b8; margin-top: 0; }}
+                table {{ width: 100%; border-collapse: collapse; text-align: left; margin-top: 10px; }}
+                th, td {{ padding: 10px; border-bottom: 1px solid #334155; font-size: 0.9rem; }}
+                th {{ color: #38bdf8; font-size: 0.8rem; text-transform: uppercase; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>Meridian Northstar Dashboard</h1>
+                <div class="status">● System Live & Listening</div>
+
+                <div class="card">
+                    <h2>Task Queue Jobs</h2>
+                    <table><thead><tr><th>ID</th><th>Task Type</th><th>Payload</th><th>Status</th></tr></thead><tbody>{task_rows}</tbody></table>
+                </div>
+
+                <div class="card">
+                    <h2>Local Stock Inventory</h2>
+                    <table><thead><tr><th>SKU</th><th>Quantity</th><th>Last Updated</th></tr></thead><tbody>{stock_rows}</tbody></table>
+                </div>
+
+                <div class="card">
+                    <h2>Kiosk Check-ins</h2>
+                    <table><thead><tr><th>Scan ID</th><th>User ID</th><th>Status</th></tr></thead><tbody>{checkin_rows}</tbody></table>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+    except Exception as e:
+        return f"<h2>System Active</h2><p>Database Initializing: {str(e)}</p>"
+
+# --- BACKEND ENDPOINTS ---
 @app.route('/webhooks/inventory', methods=['POST'])
 def webhook_inventory():
     data = request.json or {}
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO task_queue (task_type, payload) VALUES (?, ?)",
-        ("PROCESS_INVENTORY_WEBHOOK", json.dumps(data))
-    )
+    cursor.execute("INSERT INTO task_queue (task_type, payload) VALUES (?, ?)", ("PROCESS_INVENTORY_WEBHOOK", json.dumps(data)))
     conn.commit()
     conn.close()
     return jsonify({"status": "ACCEPTED"}), 200
@@ -135,14 +181,8 @@ def kiosk_checkin():
 
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO checkin_scans (scan_id, user_id, status, updated_at) VALUES (?, ?, 'Pending', ?)",
-        (scan_id, user_id, time.time())
-    )
-    cursor.execute(
-        "INSERT INTO task_queue (task_type, payload) VALUES (?, ?)",
-        ("DISPATCH_PRINT_JOB", json.dumps({"scan_id": scan_id, "user_id": user_id}))
-    )
+    cursor.execute("INSERT INTO checkin_scans (scan_id, user_id, status, updated_at) VALUES (?, ?, 'Pending', ?)", (scan_id, user_id, time.time()))
+    cursor.execute("INSERT INTO task_queue (task_type, payload) VALUES (?, ?)", ("DISPATCH_PRINT_JOB", json.dumps({"scan_id": scan_id, "user_id": user_id})))
     conn.commit()
     conn.close()
     return jsonify({"status": "Pending", "scan_id": scan_id}), 202
@@ -160,10 +200,7 @@ def webhook_print_status():
 
     if row and row[0] != "Checked In":
         if print_status == "COMPLETED":
-            cursor.execute(
-                "UPDATE checkin_scans SET status = 'Checked In', updated_at = ? WHERE scan_id = ?",
-                (time.time(), scan_id)
-            )
+            cursor.execute("UPDATE checkin_scans SET status = 'Checked In', updated_at = ? WHERE scan_id = ?", (time.time(), scan_id))
             conn.commit()
 
     conn.close()
