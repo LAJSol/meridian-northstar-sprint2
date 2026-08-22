@@ -39,32 +39,8 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Run initialization & background queue worker when file loads
 init_db()
-Thread(target=lambda: run_queue_worker(), daemon=True).start()
 
-@app.route('/')
-def home():
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    
-    # Query live records from all 3 database tables
-    cursor.execute("SELECT * FROM task_queue ORDER BY id DESC LIMIT 10")
-    tasks = [dict(row) for row in cursor.fetchall()]
-
-    cursor.execute("SELECT * FROM local_stock ORDER BY last_updated DESC LIMIT 10")
-    stock = [dict(row) for row in cursor.fetchall()]
-
-    cursor.execute("SELECT * FROM checkin_scans ORDER BY updated_at DESC LIMIT 10")
-    checkins = [dict(row) for row in cursor.fetchall()]
-
-    conn.close()
-    return render_template('index.html', tasks=tasks, stock=stock, checkins=checkins)
-except Exception as e:
-    return f"Database Initializing: {str(e)}", 200
-
-# --- WORKER: CHECKS THE WAITING LINE FOR JOBS ---
 def run_queue_worker():
     while True:
         try:
@@ -93,7 +69,7 @@ def run_queue_worker():
                     try:
                         requests.post(MOCK_PRINTER_URL, json=payload, timeout=2)
                     except Exception:
-                        pass  # Handles missing local printer server on cloud
+                        pass
 
                 cursor.execute("UPDATE task_queue SET status = 'COMPLETED' WHERE id = ?", (task_id,))
                 conn.commit()
@@ -104,7 +80,29 @@ def run_queue_worker():
             
         time.sleep(0.5)
 
-# --- WEBHOOK 1: RECEIVE STOCK UPDATES FROM WAREHOUSE ---
+Thread(target=run_queue_worker, daemon=True).start()
+
+@app.route('/')
+def home():
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM task_queue ORDER BY id DESC LIMIT 10")
+        tasks = [dict(row) for row in cursor.fetchall()]
+
+        cursor.execute("SELECT * FROM local_stock ORDER BY last_updated DESC LIMIT 10")
+        stock = [dict(row) for row in cursor.fetchall()]
+
+        cursor.execute("SELECT * FROM checkin_scans ORDER BY updated_at DESC LIMIT 10")
+        checkins = [dict(row) for row in cursor.fetchall()]
+
+        conn.close()
+        return render_template('index.html', tasks=tasks, stock=stock, checkins=checkins)
+    except Exception as e:
+        return f"<h2>System Status: Active</h2><p>Database table loading... ({str(e)})</p>"
+
 @app.route('/webhooks/inventory', methods=['POST'])
 def webhook_inventory():
     data = request.json or {}
@@ -118,7 +116,6 @@ def webhook_inventory():
     conn.close()
     return jsonify({"status": "ACCEPTED"}), 200
 
-# --- READ STOCK LEVEL FOR SUPPORT AGENTS ---
 @app.route('/inventory/<sku>', methods=['GET'])
 def get_stock(sku):
     conn = sqlite3.connect(DB_FILE)
@@ -130,7 +127,6 @@ def get_stock(sku):
         return jsonify({"sku": sku, "quantity": row[0], "cached_at": row[1]}), 200
     return jsonify({"error": "SKU not found"}), 404
 
-# --- FAST INSTANT KIOSK CHECK-IN ---
 @app.route('/kiosk/check-in', methods=['POST'])
 def kiosk_checkin():
     data = request.json or {}
@@ -151,7 +147,6 @@ def kiosk_checkin():
     conn.close()
     return jsonify({"status": "Pending", "scan_id": scan_id}), 202
 
-# --- WEBHOOK 2: RECEIVE CONFIRMATION FROM PRINTER ---
 @app.route('/webhooks/print-status', methods=['POST'])
 def webhook_print_status():
     data = request.json or {}
@@ -174,7 +169,6 @@ def webhook_print_status():
     conn.close()
     return jsonify({"status": "ACK"}), 200
 
-# --- READ CHECK-IN STATUS ---
 @app.route('/kiosk/status/<scan_id>', methods=['GET'])
 def get_scan_status(scan_id):
     conn = sqlite3.connect(DB_FILE)
