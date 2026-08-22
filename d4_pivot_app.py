@@ -61,6 +61,8 @@ def home():
 
     conn.close()
     return render_template('index.html', tasks=tasks, stock=stock, checkins=checkins)
+except Exception as e:
+    return f"Database Initializing: {str(e)}", 200
 
 # --- WORKER: CHECKS THE WAITING LINE FOR JOBS ---
 def run_queue_worker():
