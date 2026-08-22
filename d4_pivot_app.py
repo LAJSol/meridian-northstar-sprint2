@@ -4,19 +4,15 @@ import uuid
 import json
 from threading import Thread
 import requests
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template
 
 app = Flask(__name__)
-@app.route('/')
-def home():
-    return "<h1>Meridian Northstar Pivot Prototype</h1><p>Status: Server & Webhook Listener Active</p>"
 DB_FILE = "day4_system.db"
 MOCK_PRINTER_URL = "http://127.0.0.1:5001/simulate-printer-hardware"
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    # Table to store current item quantities
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS local_stock (
             sku TEXT PRIMARY KEY,
@@ -24,7 +20,6 @@ def init_db():
             last_updated REAL
         )
     ''')
-    # Table to track kiosk check-in statuses
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS checkin_scans (
             scan_id TEXT PRIMARY KEY,
@@ -33,7 +28,6 @@ def init_db():
             updated_at REAL
         )
     ''')
-    # Table acting as our simple background message queue
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS task_queue (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,6 +38,29 @@ def init_db():
     ''')
     conn.commit()
     conn.close()
+
+# Run initialization & background queue worker when file loads
+init_db()
+Thread(target=lambda: run_queue_worker(), daemon=True).start()
+
+@app.route('/')
+def home():
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    # Query live records from all 3 database tables
+    cursor.execute("SELECT * FROM task_queue ORDER BY id DESC LIMIT 10")
+    tasks = [dict(row) for row in cursor.fetchall()]
+
+    cursor.execute("SELECT * FROM local_stock ORDER BY last_updated DESC LIMIT 10")
+    stock = [dict(row) for row in cursor.fetchall()]
+
+    cursor.execute("SELECT * FROM checkin_scans ORDER BY updated_at DESC LIMIT 10")
+    checkins = [dict(row) for row in cursor.fetchall()]
+
+    conn.close()
+    return render_template('index.html', tasks=tasks, stock=stock, checkins=checkins)
 
 # --- WORKER: CHECKS THE WAITING LINE FOR JOBS ---
 def run_queue_worker():
@@ -60,7 +77,6 @@ def run_queue_worker():
                 conn.commit()
                 payload = json.loads(raw_payload)
 
-                # Process stock updates pushed from warehouse
                 if task_type == "PROCESS_INVENTORY_WEBHOOK":
                     sku = payload.get("sku")
                     qty = payload.get("quantity")
@@ -70,12 +86,12 @@ def run_queue_worker():
                         ON CONFLICT(sku) DO UPDATE SET quantity=?, last_updated=?
                     ''', (sku, qty, time.time(), qty, time.time()))
                     conn.commit()
-                    print(f"[Queue Worker] Updated stock for item {sku} to {qty}")
 
-                # Send badge print requests to printer
                 elif task_type == "DISPATCH_PRINT_JOB":
-                    requests.post(MOCK_PRINTER_URL, json=payload, timeout=5)
-                    print(f"[Queue Worker] Sent print job for scan ID {payload['scan_id']} to printer")
+                    try:
+                        requests.post(MOCK_PRINTER_URL, json=payload, timeout=2)
+                    except Exception:
+                        pass  # Handles missing local printer server on cloud
 
                 cursor.execute("UPDATE task_queue SET status = 'COMPLETED' WHERE id = ?", (task_id,))
                 conn.commit()
@@ -169,6 +185,4 @@ def get_scan_status(scan_id):
     return jsonify({"error": "Scan ID not found"}), 404
 
 if __name__ == '__main__':
-    init_db()
-    Thread(target=run_queue_worker, daemon=True).start()
     app.run(port=5000)
