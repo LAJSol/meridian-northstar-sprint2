@@ -7,6 +7,9 @@ import requests
 from flask import Flask, jsonify, request
 
 app = Flask(__name__)
+@app.route('/')
+def home():
+    return "<h1>Meridian Northstar Pivot Prototype</h1><p>Status: Server & Webhook Listener Active</p>"
 DB_FILE = "day4_system.db"
 MOCK_PRINTER_URL = "http://127.0.0.1:5001/simulate-printer-hardware"
 
