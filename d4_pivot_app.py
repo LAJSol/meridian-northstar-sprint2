@@ -41,6 +41,7 @@ def init_db():
 
 init_db()
 
+# Asynchronous Background Worker
 def run_queue_worker():
     while True:
         try:
@@ -82,7 +83,7 @@ def run_queue_worker():
 
 Thread(target=run_queue_worker, daemon=True).start()
 
-# --- HOMEPAGE WITH TEST DATA BUTTON ---
+# --- PAGE 1: SOLSTICE EVENTS CO. PIVOT (HOME PAGE) ---
 @app.route('/')
 def home():
     try:
@@ -109,15 +110,17 @@ def home():
         <html lang="en">
         <head>
             <meta charset="UTF-8">
-            <title>Meridian Northstar Operations</title>
+            <title>Solstice Events Co. - Pivot Kiosk</title>
             <style>
                 body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 25px; margin: 0; }}
                 .container {{ max-width: 1000px; margin: auto; }}
                 .header-flex {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }}
                 h1 {{ color: #38bdf8; margin: 0; }}
                 .status {{ color: #34d399; font-weight: bold; }}
-                .btn {{ background: #0284c7; color: white; padding: 10px 18px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; text-decoration: none; display: inline-block; transition: background 0.2s; }}
+                .btn {{ background: #0284c7; color: white; padding: 10px 18px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; text-decoration: none; display: inline-block; transition: background 0.2s; margin-left: 10px; }}
                 .btn:hover {{ background: #0369a1; }}
+                .btn-secondary {{ background: #334155; }}
+                .btn-secondary:hover {{ background: #475569; }}
                 .card {{ background: #1e293b; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #334155; }}
                 h2 {{ font-size: 1.1rem; color: #94a3b8; margin-top: 0; }}
                 table {{ width: 100%; border-collapse: collapse; text-align: left; margin-top: 10px; }}
@@ -129,16 +132,17 @@ def home():
             <div class="container">
                 <div class="header-flex">
                     <div>
-                        <h1>Meridian Northstar Dashboard</h1>
-                        <div class="status">● System Live & Listening</div>
+                        <h1>Solstice Events Co. - Kiosk Service</h1>
+                        <div class="status">● Asynchronous Pivot Active[cite: 1]</div>
                     </div>
                     <div>
                         <a href="/generate-test-data" class="btn">⚡ Generate Test Data</a>
+                        <a href="/northstar-archive" class="btn btn-secondary">📁 Northstar Archive</a>
                     </div>
                 </div>
 
                 <div class="card">
-                    <h2>Task Queue Jobs</h2>
+                    <h2>Task Queue Jobs (Async Message Queue)[cite: 1]</h2>
                     <table><thead><tr><th>ID</th><th>Task Type</th><th>Payload</th><th>Status</th></tr></thead><tbody>{task_rows}</tbody></table>
                 </div>
 
@@ -148,7 +152,7 @@ def home():
                 </div>
 
                 <div class="card">
-                    <h2>Kiosk Check-ins</h2>
+                    <h2>Kiosk Check-ins (Pending & Duplicate Protection)[cite: 1]</h2>
                     <table><thead><tr><th>Scan ID</th><th>User ID</th><th>Status</th></tr></thead><tbody>{checkin_rows}</tbody></table>
                 </div>
             </div>
@@ -158,13 +162,43 @@ def home():
     except Exception as e:
         return f"<h2>System Active</h2><p>Database Initializing: {str(e)}</p>"
 
-# --- TEST DATA GENERATOR ROUTE ---
+# --- PAGE 2: NORTHSTAR ARCHIVE (SEPARATE PAGE) ---
+@app.route('/northstar-archive')
+def northstar_archive():
+    return """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Meridian Northstar Archive</title>
+        <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 25px; margin: 0; }
+            .container { max-width: 800px; margin: auto; background: #1e293b; padding: 30px; border-radius: 8px; border: 1px solid #334155; }
+            h1 { color: #38bdf8; margin-top: 0; }
+            .badge { background: #334155; color: #94a3b8; padding: 4px 10px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; }
+            .btn { background: #0284c7; color: white; padding: 10px 18px; border-radius: 6px; text-decoration: none; font-weight: bold; display: inline-block; margin-top: 20px; }
+            .btn:hover { background: #0369a1; }
+            p { color: #cbd5e1; line-height: 1.6; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Meridian Northstar (Sprint 2 Archive)</h1>
+            <span class="badge">DEPRECATED ARCHIVE</span>
+            <p>This page archives the initial synchronous architecture before the Solstice Events Co. pivot event requirements were introduced.</p>
+            <p><strong>Status:</strong> Replaced entirely by the asynchronous webhook model on the main dashboard.</p>
+            <a href="/" class="btn">← Back to Solstice Pivot Dashboard</a>
+        </div>
+    </body>
+    </html>
+    """
+
+# --- PIVOT TEST DATA GENERATOR ---
 @app.route('/generate-test-data')
 def generate_test_data():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
-    # Insert mock inventory webhook tasks
     sample_skus = [("SKU-ALPHA-99", 150), ("SKU-BETA-88", 230), ("SKU-GAMMA-77", 45)]
     for sku, qty in sample_skus:
         cursor.execute(
@@ -172,9 +206,8 @@ def generate_test_data():
             ("PROCESS_INVENTORY_WEBHOOK", json.dumps({"sku": sku, "quantity": qty}))
         )
 
-    # Insert mock kiosk check-ins and print jobs
-    sample_users = ["EVALUATOR-01", "SCHOLARSHIP-02", "TESTER-03"]
-    for user_id in sample_users:
+    sample_attendees = ["ATTENDEE-01", "ATTENDEE-02", "ATTENDEE-01"]
+    for user_id in sample_attendees:
         scan_id = str(uuid.uuid4())[:8]
         cursor.execute(
             "INSERT INTO checkin_scans (scan_id, user_id, status, updated_at) VALUES (?, ?, 'Pending', ?)",
@@ -189,7 +222,7 @@ def generate_test_data():
     conn.close()
     return redirect(url_for('home'))
 
-# --- BACKEND ENDPOINTS ---
+# --- ASYNC API ENDPOINTS & WEBHOOKS ---
 @app.route('/webhooks/inventory', methods=['POST'])
 def webhook_inventory():
     data = request.json or {}
@@ -200,17 +233,6 @@ def webhook_inventory():
     conn.close()
     return jsonify({"status": "ACCEPTED"}), 200
 
-@app.route('/inventory/<sku>', methods=['GET'])
-def get_stock(sku):
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT quantity, last_updated FROM local_stock WHERE sku = ?", (sku,))
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        return jsonify({"sku": sku, "quantity": row[0], "cached_at": row[1]}), 200
-    return jsonify({"error": "SKU not found"}), 404
-
 @app.route('/kiosk/check-in', methods=['POST'])
 def kiosk_checkin():
     data = request.json or {}
@@ -219,6 +241,12 @@ def kiosk_checkin():
 
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
+    
+    cursor.execute("SELECT status FROM checkin_scans WHERE user_id = ? AND status = 'Checked In'", (user_id,))
+    if cursor.fetchone():
+        conn.close()
+        return jsonify({"error": "Duplicate scan: Attendee already checked in and printed."}), 400
+
     cursor.execute("INSERT INTO checkin_scans (scan_id, user_id, status, updated_at) VALUES (?, ?, 'Pending', ?)", (scan_id, user_id, time.time()))
     cursor.execute("INSERT INTO task_queue (task_type, payload) VALUES (?, ?)", ("DISPATCH_PRINT_JOB", json.dumps({"scan_id": scan_id, "user_id": user_id})))
     conn.commit()
@@ -243,17 +271,6 @@ def webhook_print_status():
 
     conn.close()
     return jsonify({"status": "ACK"}), 200
-
-@app.route('/kiosk/status/<scan_id>', methods=['GET'])
-def get_scan_status(scan_id):
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id, status FROM checkin_scans WHERE scan_id = ?", (scan_id,))
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        return jsonify({"scan_id": scan_id, "user_id": row[0], "status": row[1]}), 200
-    return jsonify({"error": "Scan ID not found"}), 404
 
 if __name__ == '__main__':
     app.run(port=5000)
