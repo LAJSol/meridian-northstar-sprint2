@@ -173,7 +173,7 @@ def generate_test_data():
         )
 
     # Insert mock kiosk check-ins and print jobs
-    sample_users = ["EVALUATOR-01", "SCHOLARSHIP-02", "TESTER-03"]
+    sample_users = ["EVA LUA TOR-01", "SCHOLAR SHI P-02", "TES TER-03", "C ANDY-04"]
     for user_id in sample_users:
         scan_id = str(uuid.uuid4())[:8]
         cursor.execute(
